@@ -1,0 +1,235 @@
+:root {
+  --bg: #070b14;
+  --panel: rgba(255, 255, 255, 0.06);
+  --panel-border: rgba(255, 255, 255, 0.12);
+  --input: rgba(0, 0, 0, 0.35);
+  --text: rgba(255, 255, 255, 0.92);
+  --muted: rgba(255, 255, 255, 0.6);
+  --cyan: #22d3ee;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(1200px 800px at 20% 20%, rgba(34, 211, 238, 0.12), transparent 60%),
+    radial-gradient(1200px 800px at 80% 10%, rgba(99, 102, 241, 0.12), transparent 55%),
+    var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+
+.page {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.workspace {
+  min-height: 100vh;
+  width: 100%;
+  padding: 24px 16px;
+  box-sizing: border-box;
+}
+
+.container {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 18px;
+  padding: 20px;
+  box-sizing: border-box;
+  backdrop-filter: blur(10px);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 auto 16px;
+  max-width: 960px;
+  padding: 0 16px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.subtitle {
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: 8px;
+}
+
+.linkBtn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 6px 8px;
+}
+
+.linkBtn:hover {
+  color: var(--text);
+}
+
+.fieldRow {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.field {
+  width: 100%;
+}
+
+.input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--input);
+  color: var(--text);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.input:focus {
+  border-color: rgba(34, 211, 238, 0.65);
+}
+
+.btn {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.btnPrimary {
+  background: rgba(34, 211, 238, 0.9);
+  border-color: rgba(34, 211, 238, 0.9);
+  color: #041018;
+}
+
+.btnPrimary:hover {
+  filter: brightness(1.05);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.logs {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.3);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.72);
+  max-height: 200px;
+  overflow: auto;
+}
+
+.resultBox {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  background: rgba(34, 211, 238, 0.08);
+}
+
+.smallLink {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--cyan);
+  word-break: break-all;
+}
+
+.uploader {
+  width: 100%;
+  max-width: 520px;
+  margin: 14px auto 0;
+}
+
+.uploaderBox {
+  border: 1.5px dashed rgba(255, 255, 255, 0.22);
+  border-radius: 16px;
+  padding: 18px;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.uploaderBox:hover {
+  border-color: rgba(34, 211, 238, 0.55);
+}
+
+.uploaderBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--cyan);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.uploaderHint {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.uploaderPreview {
+  position: relative;
+}
+
+.uploaderPreview img {
+  max-height: 280px;
+  max-width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.uploaderOverlay {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cyan);
+  font-weight: 700;
+}

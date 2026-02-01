@@ -1,0 +1,35 @@
+import uuid
+
+from fastapi import Depends, HTTPException
+from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy.orm import Session
+
+from app.core.security import decode_access_token
+from app.db.session import get_db
+from app.models.user import User
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+
+
+def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)) -> User:
+    try:
+        payload = decode_access_token(token)
+        sub = payload.get("sub")
+    except Exception:
+        raise HTTPException(status_code=401, detail="无效的 Token")
+
+    if not sub:
+        raise HTTPException(status_code=401, detail="无效的 Token")
+
+    try:
+        user_id = uuid.UUID(str(sub))
+    except Exception:
+        raise HTTPException(status_code=401, detail="无效的 Token")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="用户不存在")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="用户已被禁用")
+    return user
+
