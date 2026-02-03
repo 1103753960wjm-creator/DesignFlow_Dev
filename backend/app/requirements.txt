@@ -2,10 +2,12 @@ fastapi
 uvicorn
 sqlalchemy
 psycopg2-binary
-python-jose
+python-jose[cryptography]
 python-multipart
 celery
 redis
 ezdxf
 opencv-python-headless
 numpy
+shapely
+matplotlib

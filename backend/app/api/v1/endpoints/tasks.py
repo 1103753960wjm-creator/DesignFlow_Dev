@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from celery.result import AsyncResult
 from pydantic import BaseModel, Field
+from app.core.camera_views import CAMERA_VIEW_KEYS_DEFAULT, LEGACY_DEPTH_KEY, depth_filename
 from app.worker.tasks import mock_rendering_task
 
 router = APIRouter()
@@ -55,14 +56,14 @@ def get_task_status(task_id: str, request: Request):
             job_id = out_dir.name
             base_url = str(request.base_url).rstrip("/")
             base = f"{base_url}/static/processed/{job_id}"
+            depth_urls: dict[str, str] = {}
+            for key in [*CAMERA_VIEW_KEYS_DEFAULT, LEGACY_DEPTH_KEY]:
+                filename = depth_filename(key)
+                if (out_dir / filename).exists():
+                    depth_urls[key] = f"{base}/{filename}"
             response["assets"] = {
                 "model_obj_url": f"{base}/model.obj",
-                "depth_urls": {
-                    "top": f"{base}/depth_top.png",
-                    "main": f"{base}/depth_main.png",
-                    "wall": f"{base}/depth_wall.png",
-                    "0": f"{base}/depth_0.png",
-                },
+                "depth_urls": depth_urls,
             }
         
     return response

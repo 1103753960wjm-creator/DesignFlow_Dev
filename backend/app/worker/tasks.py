@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from app.core.celery_app import celery_app
+from app.core.camera_views import CAMERA_VIEW_KEYS_DEFAULT, LEGACY_DEPTH_KEY, depth_filename
 
 
 def _backend_root() -> Path:
@@ -59,7 +60,7 @@ def generate_3d_assets(self, input_file_path: str, output_dir: str):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     blender_bin = _detect_blender_bin()
-    script_path = _backend_root() / "worker" / "blender_script.py"
+    script_path = _backend_root() / "app" / "modules" / "visual" / "blender" / "blender_script.py"
 
     input_path = Path(input_file_path)
     ext = input_path.suffix.lower()
@@ -74,20 +75,16 @@ def generate_3d_assets(self, input_file_path: str, output_dir: str):
         print("Running in Mock Mode")
         obj_src, depth_src = _ensure_mock_assets()
         shutil.copyfile(obj_src, out_dir / "model.obj")
-        shutil.copyfile(depth_src, out_dir / "depth_top.png")
-        shutil.copyfile(depth_src, out_dir / "depth_main.png")
-        shutil.copyfile(depth_src, out_dir / "depth_wall.png")
-        shutil.copyfile(depth_src, out_dir / "depth_0.png")
+        for key in [*CAMERA_VIEW_KEYS_DEFAULT, LEGACY_DEPTH_KEY]:
+            shutil.copyfile(depth_src, out_dir / depth_filename(key))
         return {"status": "done", "mode": "mock", "output_dir": str(out_dir)}
 
     if not _blender_available(blender_bin):
         print("Running in Mock Mode")
         obj_src, depth_src = _ensure_mock_assets()
         shutil.copyfile(obj_src, out_dir / "model.obj")
-        shutil.copyfile(depth_src, out_dir / "depth_top.png")
-        shutil.copyfile(depth_src, out_dir / "depth_main.png")
-        shutil.copyfile(depth_src, out_dir / "depth_wall.png")
-        shutil.copyfile(depth_src, out_dir / "depth_0.png")
+        for key in [*CAMERA_VIEW_KEYS_DEFAULT, LEGACY_DEPTH_KEY]:
+            shutil.copyfile(depth_src, out_dir / depth_filename(key))
         return {"status": "done", "mode": "mock", "output_dir": str(out_dir)}
 
     cmd = [
@@ -111,10 +108,8 @@ def generate_3d_assets(self, input_file_path: str, output_dir: str):
         print("Running in Mock Mode")
         obj_src, depth_src = _ensure_mock_assets()
         shutil.copyfile(obj_src, out_dir / "model.obj")
-        shutil.copyfile(depth_src, out_dir / "depth_top.png")
-        shutil.copyfile(depth_src, out_dir / "depth_main.png")
-        shutil.copyfile(depth_src, out_dir / "depth_wall.png")
-        shutil.copyfile(depth_src, out_dir / "depth_0.png")
+        for key in [*CAMERA_VIEW_KEYS_DEFAULT, LEGACY_DEPTH_KEY]:
+            shutil.copyfile(depth_src, out_dir / depth_filename(key))
         return {
             "status": "done",
             "mode": "mock",
@@ -122,21 +117,13 @@ def generate_3d_assets(self, input_file_path: str, output_dir: str):
             "reason": f"Blender 执行失败: {stderr or stdout or e}",
         }
 
-    expected = [
-        out_dir / "model.obj",
-        out_dir / "depth_top.png",
-        out_dir / "depth_main.png",
-        out_dir / "depth_wall.png",
-        out_dir / "depth_0.png",
-    ]
+    expected = [out_dir / "model.obj", *[out_dir / depth_filename(k) for k in [*CAMERA_VIEW_KEYS_DEFAULT, LEGACY_DEPTH_KEY]]]
     if not all(p.exists() for p in expected):
         print("Running in Mock Mode")
         obj_src, depth_src = _ensure_mock_assets()
         shutil.copyfile(obj_src, out_dir / "model.obj")
-        shutil.copyfile(depth_src, out_dir / "depth_top.png")
-        shutil.copyfile(depth_src, out_dir / "depth_main.png")
-        shutil.copyfile(depth_src, out_dir / "depth_wall.png")
-        shutil.copyfile(depth_src, out_dir / "depth_0.png")
+        for key in [*CAMERA_VIEW_KEYS_DEFAULT, LEGACY_DEPTH_KEY]:
+            shutil.copyfile(depth_src, out_dir / depth_filename(key))
         return {
             "status": "done",
             "mode": "mock",

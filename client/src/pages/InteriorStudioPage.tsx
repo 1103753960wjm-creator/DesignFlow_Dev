@@ -5,6 +5,7 @@ import { CadPreview } from "@/components/cad/CadPreview"
 import { Button } from "@/components/ui/button"
 import { api } from "@/lib/api"
 import { formatApiError } from "@/lib/apiError"
+import { CAMERA_VIEW_DEFAULTS, CAMERA_VIEW_LABEL, type CameraViewKey } from "@/lib/cameraViews"
 
 type WhiteboxResponse = {
   whitebox_url: string
@@ -13,6 +14,7 @@ type WhiteboxResponse = {
 
 type GalleryResponse = {
   images: string[]
+  views?: string[] | null
 }
 
 type ProcessCadResponse = {
@@ -99,7 +101,7 @@ export function InteriorStudioPage() {
   const [uploaded, setUploaded] = useState<UploadResult | null>(null)
   const [whitebox, setWhitebox] = useState<WhiteboxResponse | null>(null)
   const [gallery, setGallery] = useState<string[] | null>(null)
-  const [galleryViews, setGalleryViews] = useState<Array<"main" | "side" | "topA"> | null>(null)
+  const [galleryViews, setGalleryViews] = useState<CameraViewKey[] | null>(null)
   const [resultIndex, setResultIndex] = useState(0)
   const [refineText, setRefineText] = useState("")
   const [cadDepthUrls, setCadDepthUrls] = useState<Record<string, string> | null>(null)
@@ -112,9 +114,7 @@ export function InteriorStudioPage() {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [cameraMain, setCameraMain] = useState(true)
-  const [cameraSide, setCameraSide] = useState(true)
-  const [cameraTop, setCameraTop] = useState(false)
+  const [selectedViews, setSelectedViews] = useState<CameraViewKey[]>(CAMERA_VIEW_DEFAULTS)
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const noticeTimerRef = useRef<number | null>(null)
@@ -146,10 +146,22 @@ export function InteriorStudioPage() {
 
   const currentViewLabel = useMemo(() => {
     const key = galleryViews?.[resultIndex]
-    if (key === "side") return "俯视图 (Top)"
-    if (key === "topA") return "立面A (Elevation)"
-    return "主视角 (Main)"
+    if (!key) return "主视角"
+    return CAMERA_VIEW_LABEL[key] || key
   }, [galleryViews, resultIndex])
+
+  const viewOrder = useMemo(() => new Map(CAMERA_VIEW_DEFAULTS.map((k, idx) => [k, idx])), [])
+
+  function isCameraViewKey(value: string): value is CameraViewKey {
+    return Object.prototype.hasOwnProperty.call(CAMERA_VIEW_LABEL, value)
+  }
+
+  function toggleView(viewKey: CameraViewKey) {
+    setSelectedViews((prev) => {
+      const next = prev.includes(viewKey) ? prev.filter((k) => k !== viewKey) : [...prev, viewKey]
+      return next.sort((a, b) => (viewOrder.get(a) ?? 0) - (viewOrder.get(b) ?? 0))
+    })
+  }
 
   const currentResultUrl = useMemo(() => {
     if (!gallery?.length) return null
@@ -280,10 +292,6 @@ export function InteriorStudioPage() {
 
   async function startBatchRender() {
     if (!uploaded || !whitebox) return
-    const selectedViews: Array<"main" | "side" | "topA"> = []
-    if (cameraMain) selectedViews.push("main")
-    if (cameraSide) selectedViews.push("side")
-    if (cameraTop) selectedViews.push("topA")
     if (!selectedViews.length) {
       setError("请至少选择一个机位")
       return
@@ -295,13 +303,19 @@ export function InteriorStudioPage() {
       const res = await api.post<GalleryResponse>("/design/gallery", {
         whitebox_url: whitebox.whitebox_url,
         depth_url: whitebox.depth_url,
+        depth_urls: cadDepthUrls,
         prompt: resolvedPrompt,
         strength: controlStrength,
-        cameras: { main: cameraMain, side: cameraSide, topA: cameraTop },
+        cameras: selectedViews,
       })
       const images = res.data.images
+      const views = res.data.views
       setGallery(images)
-      setGalleryViews(images.map((_, idx) => selectedViews[idx % selectedViews.length]))
+      if (Array.isArray(views) && views.length === images.length && views.every((v) => typeof v === "string" && isCameraViewKey(v))) {
+        setGalleryViews(views as CameraViewKey[])
+      } else {
+        setGalleryViews(images.map((_, idx) => selectedViews[idx % selectedViews.length]))
+      }
     } catch (err: any) {
       setError(formatApiError(err))
     } finally {
@@ -480,30 +494,47 @@ export function InteriorStudioPage() {
               <div className="mt-5 rounded-2xl bg-white/5 px-4 py-3">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div className="text-sm font-medium text-white/80">虚拟拍摄机位</div>
-                  <div className="flex items-center gap-3 text-xs text-white/70">
-                    <label className="inline-flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={cameraMain}
-                        disabled={!whitebox}
-                        onChange={(e) => setCameraMain(e.target.checked)}
-                      />
-                      主视角
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 rounded-xl bg-white/5 text-white hover:bg-white/10"
+                    disabled={!whitebox}
+                    onClick={() => setSelectedViews(CAMERA_VIEW_DEFAULTS)}
+                  >
+                    全选
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 rounded-xl bg-white/5 text-white hover:bg-white/10"
+                    disabled={!whitebox}
+                    onClick={() => setSelectedViews(["main", "top", "elev_n", "elev_s", "corner_ne", "corner_sw"])}
+                  >
+                    常用6
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 rounded-xl bg-white/5 text-white hover:bg-white/10"
+                    disabled={!whitebox}
+                    onClick={() => setSelectedViews([])}
+                  >
+                    清空
+                  </Button>
+                  <div className="ml-auto text-xs text-white/60">已选 {selectedViews.length} 个机位</div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-white/70 md:grid-cols-3">
+                  {CAMERA_VIEW_DEFAULTS.map((key) => (
+                    <label key={key} className="inline-flex items-center gap-2">
+                      <input type="checkbox" checked={selectedViews.includes(key)} disabled={!whitebox} onChange={() => toggleView(key)} />
+                      {CAMERA_VIEW_LABEL[key]}
                     </label>
-                    <label className="inline-flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={cameraSide}
-                        disabled={!whitebox}
-                        onChange={(e) => setCameraSide(e.target.checked)}
-                      />
-                      俯视图
-                    </label>
-                    <label className="inline-flex items-center gap-2">
-                      <input type="checkbox" checked={cameraTop} disabled={!whitebox} onChange={(e) => setCameraTop(e.target.checked)} />
-                      立面A
-                    </label>
-                  </div>
+                  ))}
                 </div>
               </div>
             </div>

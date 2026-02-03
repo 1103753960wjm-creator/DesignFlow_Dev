@@ -15,15 +15,16 @@ def post_multipart(url: str, token: str, file_path: Path) -> dict:
     boundary = "----WebKitFormBoundary" + uuid.uuid4().hex
     crlf = "\r\n"
 
-    fb = file_path.read_bytes()
     ext = file_path.suffix.lower()
     content_type = "application/octet-stream"
     if ext == ".dxf":
         content_type = "application/dxf"
-    elif ext in (".png",):
+    elif ext == ".png":
         content_type = "image/png"
     elif ext in (".jpg", ".jpeg"):
         content_type = "image/jpeg"
+
+    fb = file_path.read_bytes()
     parts: list[bytes] = []
     parts.append(f"--{boundary}".encode())
     parts.append(f'Content-Disposition: form-data; name="file"; filename="{file_path.name}"'.encode())
@@ -48,28 +49,21 @@ def post_multipart(url: str, token: str, file_path: Path) -> dict:
 
 def main():
     base = "http://127.0.0.1:8002/api/v1"
-    email = f"cad_{uuid.uuid4().hex[:8]}@studio.com"
+    email = f"img_{uuid.uuid4().hex[:8]}@studio.com"
     phone = "138" + str(uuid.uuid4().int)[0:8]
 
     reg = post_json(
         f"{base}/auth/register",
-        {"email": email, "phone": phone, "password": "Password123", "nickname": "CAD"},
+        {"email": email, "phone": phone, "password": "Password123", "nickname": "IMG"},
     )
     token = reg["access_token"]
 
-    dxf = Path(__file__).resolve().parents[1] / "assets" / "mock" / "sample_room.dxf"
-    resp = post_multipart(f"{base}/design/process-cad", token, dxf)
-    print(json.dumps(resp, ensure_ascii=False, indent=2))
-
-    png = Path(__file__).resolve().parents[1] / "assets" / "mock" / "test_room.png"
-    if png.exists():
-        resp2 = post_multipart(f"{base}/design/process-cad", token, png)
-        print(json.dumps(resp2, ensure_ascii=False, indent=2))
-
     img = Path(__file__).resolve().parents[1] / "assets" / "mock" / "downloaded-image.png"
-    if img.exists():
-        resp3 = post_multipart(f"{base}/design/process-cad", token, img)
-        print(json.dumps(resp3, ensure_ascii=False, indent=2))
+    if not img.exists():
+        raise SystemExit("找不到 assets/mock/downloaded-image.png")
+
+    resp = post_multipart(f"{base}/design/process-cad", token, img)
+    print(json.dumps(resp, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

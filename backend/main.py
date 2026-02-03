@@ -18,6 +18,9 @@ from fastapi.middleware.cors import CORSMiddleware   # 👈 负责跨域 (刚才
 from app.core.config import settings
 from app.db.session import engine, Base
 from app.api.v1.api import api_router
+from app.modules.visual.router import router as visual_router
+from app.modules.engineering.router import router as engineering_router
+from app.models import cad_revision as _cad_revision
 
 # ==========================================
 # 3. 自动建表与初始化
@@ -57,6 +60,8 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 # 6. 挂载业务路由
 # ==========================================
 app.include_router(api_router, prefix="/api/v1")
+app.include_router(visual_router, prefix="/api/v1/visual")
+app.include_router(engineering_router, prefix="/api/v1/engineering")
 
 if __name__ == "__main__":
     import uvicorn
