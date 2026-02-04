@@ -64,7 +64,7 @@ export function LoginPage() {
                   const res = await login({ email: normalizeEmail(email), password })
                   setAccessToken(res.data.access_token)
                   navigate(next ?? "/app?mode=interior", { replace: true })
-                } catch (err: any) {
+                } catch (err: unknown) {
                   setError(formatApiError(err))
                 } finally {
                   setLoading(false)

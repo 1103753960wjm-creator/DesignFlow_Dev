@@ -1,4 +1,4 @@
 declare module "three-dxf" {
-  export function Viewer(...args: any[]): any
+  export function Viewer(...args: unknown[]): unknown
 }
 

@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useMemo } from "react"
 import { Canvas, useLoader } from "@react-three/fiber"
 import { Bounds, OrbitControls } from "@react-three/drei"
-import { MeshStandardMaterial } from "three"
+import { Mesh, MeshStandardMaterial } from "three"
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader"
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader"
 
@@ -15,8 +15,8 @@ function LoadedObj({ url }: { url: string }) {
   const material = useMemo(() => new MeshStandardMaterial({ color: "#e2e8f0", roughness: 0.8, metalness: 0.0 }), [])
 
   useEffect(() => {
-    obj.traverse((child: any) => {
-      if (child?.isMesh) {
+    obj.traverse((child) => {
+      if (child instanceof Mesh) {
         child.material = material
       }
     })
@@ -30,8 +30,8 @@ function LoadedGltf({ url }: { url: string }) {
   const material = useMemo(() => new MeshStandardMaterial({ color: "#e2e8f0", roughness: 0.8, metalness: 0.0 }), [])
 
   useEffect(() => {
-    gltf.scene.traverse((child: any) => {
-      if (child?.isMesh) {
+    gltf.scene.traverse((child) => {
+      if (child instanceof Mesh) {
         child.material = material
       }
     })

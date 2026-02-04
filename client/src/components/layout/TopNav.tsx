@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 type Props = {
-  active: "home" | "workshop" | "knowledge"
+  active: "home" | "workshop" | "smartCad" | "knowledge"
   userLabel?: string
   onLogout: () => void
 }
@@ -41,6 +41,15 @@ export function TopNav({ active, userLabel, onLogout }: Props) {
             className={cn("font-medium text-slate-600 hover:text-slate-900", active === "home" && "text-indigo-600")}
           >
             首页
+          </Link>
+          <Link
+            to="/app/smart-cad"
+            className={cn(
+              "font-medium text-slate-600 hover:text-slate-900",
+              active === "smartCad" && "text-indigo-600"
+            )}
+          >
+            智能 CAD
           </Link>
           <Link
             to="/app/workshop"

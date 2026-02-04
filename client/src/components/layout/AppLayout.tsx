@@ -30,6 +30,7 @@ export function AppLayout() {
   const active = useMemo(() => {
     const p = location.pathname
     if (p.startsWith("/app/knowledge")) return "knowledge" as const
+    if (p.startsWith("/app/smart-cad")) return "smartCad" as const
     if (p.startsWith("/app/workshop") || p.startsWith("/app/interior")) return "workshop" as const
     return "home" as const
   }, [location.pathname])

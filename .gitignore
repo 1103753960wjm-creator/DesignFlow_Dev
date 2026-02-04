@@ -15,6 +15,10 @@ backend/venv/
 backend/.pytest_cache/
 backend/static/uploads/
 backend/static/processed/
+backend/_tmp_test.db
+*.db
+backend/assets/mock/debug_*
+backend/assets/mock/downloaded-*
 
 client/node_modules/
 client/dist/

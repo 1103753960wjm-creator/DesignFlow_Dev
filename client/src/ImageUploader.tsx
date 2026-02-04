@@ -45,8 +45,17 @@ export default function ImageUploader({ onUploadSuccess }: Props) {
       const filename = res.data.filename as string
       const encrypted = res.data.encrypted as boolean | undefined
       onUploadSuccess({ file: nextFile, previewUrl: localUrl, filename, url: serverUrl, encrypted })
-    } catch (err: any) {
-      setError(err.response?.data?.detail || "上传失败，请检查后端是否启动")
+    } catch (err: unknown) {
+      const msg = (() => {
+        if (!err || typeof err !== "object") return null
+        const response = "response" in err ? (err as { response?: unknown }).response : undefined
+        if (!response || typeof response !== "object") return null
+        const data = "data" in response ? (response as { data?: unknown }).data : undefined
+        if (!data || typeof data !== "object") return null
+        const detail = "detail" in data ? (data as { detail?: unknown }).detail : undefined
+        return typeof detail === "string" ? detail : null
+      })()
+      setError(msg ?? "上传失败，请检查后端是否启动")
     } finally {
       setUploading(false)
     }

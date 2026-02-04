@@ -10,24 +10,30 @@ type Props = {
   className?: string
 }
 
+type ViewerInstance = {
+  resize?: (width: number, height: number) => void
+  render?: () => void
+  renderer?: { dispose?: () => void }
+}
+
 export function CadPreview({ file, className }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
-  const viewerRef = useRef<any>(null)
+  const viewerRef = useRef<ViewerInstance | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const isDxf = useMemo(() => file.name.toLowerCase().endsWith(".dxf"), [file.name])
 
   useEffect(() => {
     let cancelled = false
+    const containerEl = containerRef.current
 
-    async function run() {
+    async function run(): Promise<void | (() => void)> {
       setError(null)
       viewerRef.current = null
 
-      const container = containerRef.current
-      if (!container) return
+      if (!containerEl) return
 
-      container.innerHTML = ""
+      containerEl.innerHTML = ""
 
       if (!isDxf) {
         setError("仅支持 .dxf 预览")
@@ -41,33 +47,34 @@ export function CadPreview({ file, className }: Props) {
         const parser = new DxfParser()
         const dxf = parser.parseSync(text)
 
-        const width = Math.max(1, container.clientWidth)
-        const height = Math.max(1, container.clientHeight)
-        viewerRef.current = new (Viewer as any)(dxf, container, width, height)
+        const width = Math.max(1, containerEl.clientWidth)
+        const height = Math.max(1, containerEl.clientHeight)
+        const ViewerCtor = Viewer as unknown as new (dxf: unknown, el: HTMLElement, w: number, h: number) => ViewerInstance
+        viewerRef.current = new ViewerCtor(dxf as unknown, containerEl, width, height)
 
         const onResize = () => {
-          const nextW = Math.max(1, container.clientWidth)
-          const nextH = Math.max(1, container.clientHeight)
+          const nextW = Math.max(1, containerEl.clientWidth)
+          const nextH = Math.max(1, containerEl.clientHeight)
           viewerRef.current?.resize?.(nextW, nextH)
         }
         window.addEventListener("resize", onResize)
 
         return () => window.removeEventListener("resize", onResize)
-      } catch (e: any) {
-        setError(e?.message || "DXF 解析失败")
+      } catch (e: unknown) {
+        const msg = e && typeof e === "object" && "message" in e ? (e as { message?: unknown }).message : undefined
+        setError(typeof msg === "string" && msg.trim() ? msg : "DXF 解析失败")
       }
     }
 
     let cleanupResize: void | (() => void)
     run().then((cleanup) => {
-      cleanupResize = cleanup as any
+      cleanupResize = cleanup
     })
 
     return () => {
       cancelled = true
       cleanupResize?.()
-      const container = containerRef.current
-      if (container) container.innerHTML = ""
+      if (containerEl) containerEl.innerHTML = ""
       const renderer = viewerRef.current?.renderer
       renderer?.dispose?.()
       viewerRef.current = null
@@ -82,9 +89,9 @@ export function CadPreview({ file, className }: Props) {
           variant="secondary"
           size="sm"
           onClick={() => {
-            const container = containerRef.current
-            if (!container) return
-            viewerRef.current?.resize?.(Math.max(1, container.clientWidth), Math.max(1, container.clientHeight))
+          const container = containerRef.current
+          if (!container) return
+          viewerRef.current?.resize?.(Math.max(1, container.clientWidth), Math.max(1, container.clientHeight))
             viewerRef.current?.render?.()
           }}
         >

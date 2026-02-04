@@ -244,7 +244,7 @@ export function InteriorStudioPage() {
         const encrypted = res.data.encrypted as boolean | undefined
         setUploaded({ file, previewUrl, filename, url, encrypted })
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(formatApiError(err))
     } finally {
       setUploading(false)
@@ -283,7 +283,7 @@ export function InteriorStudioPage() {
     setLoadingWhitebox(true)
     try {
       await ensureWhitebox()
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(formatApiError(err))
     } finally {
       setLoadingWhitebox(false)
@@ -316,7 +316,7 @@ export function InteriorStudioPage() {
       } else {
         setGalleryViews(images.map((_, idx) => selectedViews[idx % selectedViews.length]))
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(formatApiError(err))
     } finally {
       setLoadingGallery(false)
@@ -774,4 +774,3 @@ export function InteriorStudioPage() {
     </div>
   )
 }
-
