@@ -11,14 +11,20 @@ Redis/
 **/__pycache__/
 **/*.py[cod]
 
+.venv/
 backend/venv/
 backend/.pytest_cache/
 backend/static/uploads/
 backend/static/processed/
+backend/static/engineering/
 backend/_tmp_test.db
 *.db
 backend/assets/mock/debug_*
 backend/assets/mock/downloaded-*
+backend/tmp*/
+pytest-of-*/
+*.pem
+integration_check.md
 
 client/node_modules/
 client/dist/

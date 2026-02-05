@@ -59,6 +59,14 @@ class DetectParams:
     max_gap: int
 
 
+class ImageToDxfError(RuntimeError):
+    pass
+
+
+class ImageClarityError(ImageToDxfError):
+    pass
+
+
 def _remove_small_and_thin_components(mask, *, min_area: int, thin_px: int, long_px: int):
     import cv2
     import numpy as np
@@ -298,6 +306,13 @@ def _run_canny_hough(gray, *, params: DetectParams):
     else:
         _, mask = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
+    fg_ratio = float((mask > 0).mean())
+    if fg_ratio < 0.0005 or fg_ratio > 0.5:
+        _, mask2 = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        fg_ratio2 = float((mask2 > 0).mean())
+        if 0.0005 <= fg_ratio2 <= 0.5:
+            mask = mask2
+
     if params.morph_close:
         mk = _odd_kernel(params.morph_kernel)
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (mk, mk))
@@ -318,7 +333,7 @@ def _run_canny_hough(gray, *, params: DetectParams):
         minLineLength=int(params.min_line),
         maxLineGap=int(params.max_gap),
     )
-    return edges, lines
+    return mask, edges, lines
 
 
 def _save_debug_images(*, out_dir: Path, gray, edges, color, lines) -> None:
@@ -345,7 +360,7 @@ def image_to_dxf(*, image_path: str | Path, dxf_path: str | Path) -> Path:
 
     color = cv2.imread(str(img_path), cv2.IMREAD_COLOR)
     if color is None:
-        raise RuntimeError(f"无法读取图片: {img_path}")
+        raise ImageToDxfError(f"无法读取图片: {img_path}")
     gray = cv2.cvtColor(color, cv2.COLOR_BGR2GRAY)
     full_h = int(gray.shape[0])
 
@@ -380,7 +395,7 @@ def image_to_dxf(*, image_path: str | Path, dxf_path: str | Path) -> Path:
         max_gap=_env_int("IMAGE_DXF_MAX_GAP", 25),
     )
 
-    edges, lines = _run_canny_hough(gray, params=params)
+    mask, edges, lines = _run_canny_hough(gray, params=params)
     raw_count = 0 if lines is None else int(lines.reshape(-1, 4).shape[0])
 
     min_ok = _env_int("IMAGE_DXF_MIN_RAW_LINES", 5)
@@ -396,10 +411,10 @@ def image_to_dxf(*, image_path: str | Path, dxf_path: str | Path) -> Path:
             min_line=_env_int("IMAGE_DXF_MIN_LINE_AGG", max(6, params.min_line // 2)),
             max_gap=_env_int("IMAGE_DXF_MAX_GAP_AGG", max(35, params.max_gap)),
         )
-        edges2, lines2 = _run_canny_hough(gray, params=aggressive)
+        mask2, edges2, lines2 = _run_canny_hough(gray, params=aggressive)
         raw_count2 = 0 if lines2 is None else int(lines2.reshape(-1, 4).shape[0])
         if raw_count2 > raw_count:
-            edges, lines, raw_count = edges2, lines2, raw_count2
+            mask, edges, lines, raw_count = mask2, edges2, lines2, raw_count2
 
     max_ok = _env_int("IMAGE_DXF_MAX_RAW_LINES", 800)
     if raw_count > max_ok:
@@ -414,42 +429,32 @@ def image_to_dxf(*, image_path: str | Path, dxf_path: str | Path) -> Path:
             min_line=_env_int("IMAGE_DXF_MIN_LINE_STRICT", 60),
             max_gap=_env_int("IMAGE_DXF_MAX_GAP_STRICT", 12),
         )
-        edges3, lines3 = _run_canny_hough(gray, params=strict)
+        mask3, edges3, lines3 = _run_canny_hough(gray, params=strict)
         raw_count3 = 0 if lines3 is None else int(lines3.reshape(-1, 4).shape[0])
         if 0 < raw_count3 < raw_count:
-            edges, lines, raw_count = edges3, lines3, raw_count3
+            mask, edges, lines, raw_count = mask3, edges3, lines3, raw_count3
 
-    if raw_count == 0 and _env_bool("IMAGE_DXF_FALLBACK_CONTOUR", True):
-        try:
-            import numpy as np
-            import cv2
+    fallback_contour = _env_bool("IMAGE_DXF_FALLBACK_CONTOUR", True)
+    fallback_contours = []
+    if raw_count == 0 and fallback_contour:
+        import cv2
 
-            contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            pad = _env_int("IMAGE_DXF_FALLBACK_PAD", 2)
-            if contours:
-                c = max(contours, key=cv2.contourArea)
-                x, y, w, h2 = cv2.boundingRect(c)
-                x0 = max(0, int(x) - pad)
-                y0 = max(0, int(y) - pad)
-                x1 = min(int(gray.shape[1]) - 1, int(x + w) + pad)
-                y1 = min(int(gray.shape[0]) - 1, int(y + h2) + pad)
-            else:
-                x0, y0 = pad, pad
-                x1 = max(pad + 4, int(gray.shape[1]) - 1 - pad)
-                y1 = max(pad + 4, int(gray.shape[0]) - 1 - pad)
-            if (x1 - x0) >= 4 and (y1 - y0) >= 4:
-                lines = np.asarray(
-                    [
-                        [x0, y0, x1, y0],
-                        [x1, y0, x1, y1],
-                        [x1, y1, x0, y1],
-                        [x0, y1, x0, y0],
-                    ],
-                    dtype=np.float64,
-                )
-                raw_count = int(lines.reshape(-1, 4).shape[0])
-        except Exception:
-            pass
+        fallback_contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not fallback_contours:
+            inv = cv2.bitwise_not(mask)
+            fallback_contours, _ = cv2.findContours(inv, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not fallback_contours:
+            blur_k = _odd_kernel(params.blur_kernel)
+            blur = cv2.GaussianBlur(gray, (blur_k, blur_k), 0)
+            _, b1 = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            fallback_contours, _ = cv2.findContours(b1, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not fallback_contours:
+                b2 = cv2.bitwise_not(b1)
+                fallback_contours, _ = cv2.findContours(b2, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not fallback_contours:
+            raise ImageClarityError("未检测到可用线条")
+    elif raw_count == 0:
+        raise ImageClarityError("未检测到可用线条")
 
     debug = _env_bool("IMAGE_DXF_DEBUG", False)
     if debug:
@@ -463,6 +468,8 @@ def image_to_dxf(*, image_path: str | Path, dxf_path: str | Path) -> Path:
     import ezdxf
     doc = ezdxf.new(dxfversion="R2010")
     msp = doc.modelspace()
+    if not doc.layers.has_entry("WALL"):
+        doc.layers.new(name="WALL")
 
     if lines is not None and raw_count > 0:
         angle_tol = _env_float("IMAGE_DXF_MERGE_ANGLE_TOL", 5.0)
@@ -489,7 +496,9 @@ def image_to_dxf(*, image_path: str | Path, dxf_path: str | Path) -> Path:
             segs = _orthogonalize_lines(segs, tol_deg=ortho_tol)
 
         merged_count = int(segs.shape[0])
-        print(f"Merged {raw_count} lines into {merged_count} clean wall axes")
+        min_merged_ok = _env_int("IMAGE_DXF_MIN_MERGED_LINES", 4)
+        if merged_count < min_merged_ok:
+            raise ImageClarityError("线条数量不足，疑似图片清晰度不足")
 
         for (x1, y1, x2, y2) in segs:
             x1o = float(x1) + float(off_x)
@@ -500,9 +509,70 @@ def image_to_dxf(*, image_path: str | Path, dxf_path: str | Path) -> Path:
             sy = float(h - float(y1o)) * mm_per_px
             ex = float(x2o) * mm_per_px
             ey = float(h - float(y2o)) * mm_per_px
-            msp.add_line((sx, sy), (ex, ey))
+            msp.add_line((sx, sy), (ex, ey), dxfattribs={"layer": "WALL"})
+    elif fallback_contours:
+        import cv2
+
+        img_area = float(gray.shape[0] * gray.shape[1])
+        keep = [c for c in fallback_contours if float(cv2.contourArea(c)) >= max(200.0, img_area * 0.002)]
+        if not keep:
+            raise ImageClarityError("线条数量不足，疑似图片清晰度不足")
+        keep.sort(key=cv2.contourArea, reverse=True)
+        eps = float(_env_float("IMAGE_DXF_CONTOUR_EPS", 2.5))
+        max_cnt = int(_env_int("IMAGE_DXF_CONTOUR_MAX", 10))
+        for c in keep[:max_cnt]:
+            approx = cv2.approxPolyDP(c, epsilon=eps, closed=True)
+            pts = [(float(p[0][0]) + float(off_x), float(p[0][1]) + float(off_y)) for p in approx]
+            if len(pts) < 3:
+                continue
+            mapped = [(x * mm_per_px, (h - y) * mm_per_px) for x, y in pts]
+            msp.add_lwpolyline(mapped, format="xy", close=True, dxfattribs={"layer": "WALL"})
     else:
-        print("[WARN] No lines detected. DXF will be empty.")
+        raise ImageClarityError("未检测到可用线条")
     doc.saveas(str(out_path))
     return out_path
+
+
+def convert_image_to_dxf(image_path: str | Path, output_dxf_path: str | Path) -> Path:
+    try:
+        out = image_to_dxf(image_path=image_path, dxf_path=output_dxf_path)
+    except ImageClarityError:
+        raise
+    except ImageToDxfError:
+        raise
+    except Exception as e:
+        raise ImageToDxfError(str(e))
+
+    try:
+        import ezdxf
+
+        doc = ezdxf.readfile(str(out))
+        msp = doc.modelspace()
+        wall_entities = [e for e in msp if str(getattr(e.dxf, "layer", "")).upper() == "WALL"]
+
+        seg_count = 0
+        for e in wall_entities:
+            t = e.dxftype()
+            if t == "LINE":
+                seg_count += 1
+            elif t == "LWPOLYLINE":
+                pts = list(e.get_points("xy"))  # type: ignore[attr-defined]
+                if len(pts) >= 2:
+                    seg_count += len(pts) - 1
+                    if bool(getattr(e, "closed", False)) and len(pts) >= 3:
+                        seg_count += 1
+            elif t == "POLYLINE":
+                pts = list(e.vertices())  # type: ignore[attr-defined]
+                if len(pts) >= 2:
+                    seg_count += len(pts) - 1
+                    if bool(getattr(e, "is_closed", False)) and len(pts) >= 3:
+                        seg_count += 1
+
+        if seg_count < 4:
+            raise ImageClarityError("DXF 线条过少，疑似图片清晰度不足")
+    except ImageClarityError:
+        raise
+    except Exception as e:
+        raise ImageToDxfError(f"DXF 校验失败: {e}")
+    return out
 

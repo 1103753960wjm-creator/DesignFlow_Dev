@@ -11,3 +11,5 @@ opencv-python-headless
 numpy
 shapely
 matplotlib
+instructor
+openai
