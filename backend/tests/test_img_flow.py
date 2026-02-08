@@ -28,6 +28,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     import app.modules.engineering.router as eng_router
 
     monkeypatch.setattr(eng_router, "_backend_dir", lambda: tmp_path)
+    monkeypatch.setenv("IMAGE_DXF_USE_LOCAL_SEG", "0")
     monkeypatch.setenv("IMAGE_DXF_MM_PER_PX", "10")
     monkeypatch.setenv("IMAGE_DXF_MIN_MERGED_LINES", "4")
     yield TestClient(app)
@@ -46,10 +47,17 @@ def test_upload_image_converts_to_dxf_and_returns_svg(client: TestClient):
     assert "<svg" in data["svg_preview"]
 
     assert isinstance(data["dxf_url"], str) and data["dxf_url"].startswith("/static/")
+    assert isinstance(data.get("debug_images"), list)
+    assert len(data["debug_images"]) == 3
+    for u in data["debug_images"]:
+        assert isinstance(u, str) and f"/static/debug/{data['session_id']}/" in u
 
     dxf_path = Path(data["dxf_file_path"])
     assert dxf_path.exists()
     assert dxf_path.suffix.lower() == ".dxf"
+    debug_dir = dxf_path.parents[3] / "debug" / data["session_id"]
+    for name in ("debug_step1_gray.png", "debug_step2_ai_mask.png", "debug_step3_opencv_edges.png"):
+        assert (debug_dir / name).exists()
 
     doc = ezdxf.readfile(str(dxf_path))
     msp = doc.modelspace()

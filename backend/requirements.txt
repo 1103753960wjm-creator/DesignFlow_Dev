@@ -1,3 +1,9 @@
 -r app/requirements.txt
+torch
+torchvision
+segmentation-models-pytorch
 opencv-python-headless
+ezdxf
+shapely
+numpy
 scikit-image

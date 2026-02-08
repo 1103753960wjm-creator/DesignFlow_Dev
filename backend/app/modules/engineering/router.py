@@ -84,12 +84,18 @@ def upload_image(file: UploadFile = File(...), current_user: User = Depends(get_
     except Exception:
         raise HTTPException(status_code=400, detail="生成的 DXF 不在静态目录下，无法下载")
     dxf_url = f"/static/{rel}"
+    debug_root = (backend_dir / "static" / "debug" / session_id).resolve()
+    debug_images: list[str] = []
+    for name in ("debug_step1_gray.png", "debug_step2_ai_mask.png", "debug_step3_opencv_edges.png"):
+        if (debug_root / name).exists():
+            debug_images.append(f"/static/debug/{session_id}/{name}")
     return UploadImageConvertedResponse(
         status="converted",
         dxf_file_path=str(dxf_path),
         dxf_url=dxf_url,
         svg_preview=svg_preview,
         session_id=session_id,
+        debug_images=debug_images,
     )
 
 

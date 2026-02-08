@@ -28,6 +28,7 @@ export type EngineeringUploadImageResponse = {
   dxf_url: string
   svg_preview: string
   session_id: string
+  debug_images: string[]
 }
 
 export type EngineeringModifyResponse = {

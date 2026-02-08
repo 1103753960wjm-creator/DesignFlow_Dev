@@ -12,6 +12,7 @@ type UploadedCad = {
   dxfPath: string
   downloadUrl: string
   svg: string
+  debugImages: string[]
 }
 
 type ToastState = { message: string } | null
@@ -55,6 +56,25 @@ export function SmartCadUploadPage() {
     return `${origin}/${raw}`
   }, [dxfDownloadUrl])
 
+  const resolvedDebugImages = useMemo(() => {
+    const list = active?.debugImages ?? []
+    const base = import.meta.env.VITE_API_BASE_URL ?? window.location.origin
+    let origin = window.location.origin
+    try {
+      origin = new URL(base).origin
+    } catch {
+      origin = window.location.origin
+    }
+    return list
+      .map((u) => String(u ?? "").trim())
+      .filter(Boolean)
+      .map((u) => {
+        if (u.startsWith("http://") || u.startsWith("https://")) return u
+        if (u.startsWith("/")) return `${origin}${u}`
+        return `${origin}/${u}`
+      })
+  }, [active?.debugImages])
+
   function showToast(message: string) {
     setToast({ message })
     window.setTimeout(() => setToast(null), 2600)
@@ -69,6 +89,7 @@ export function SmartCadUploadPage() {
         dxfPath: data.dxf_file_path,
         downloadUrl: data.dxf_url,
         svg: data.svg_preview,
+        debugImages: data.debug_images ?? [],
       }
       setFiles((prev) => {
         const list = [next, ...prev]
@@ -257,6 +278,22 @@ export function SmartCadUploadPage() {
               )}
             </div>
           </div>
+
+          {resolvedDebugImages.length > 0 && (
+            <details className="border-t border-slate-200 px-4 py-3">
+              <summary className="cursor-pointer select-none text-sm font-semibold text-slate-900">
+                🛠️ 算法调试视图
+              </summary>
+              <div className="mt-3 flex gap-3 overflow-x-auto pb-2">
+                {resolvedDebugImages.map((url) => (
+                  <div key={url} className="w-[260px] shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                    <img src={url} className="h-44 w-full object-contain bg-slate-50" alt="debug" loading="lazy" />
+                    <div className="border-t border-slate-200 px-3 py-2 text-[11px] text-slate-600">{url.split("/").pop()}</div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
 
           <div className="border-t border-slate-200 p-4">
             <div className="flex gap-2">

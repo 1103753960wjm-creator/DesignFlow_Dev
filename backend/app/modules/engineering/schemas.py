@@ -60,3 +60,4 @@ class UploadImageConvertedResponse(BaseModel):
     dxf_url: str = Field(description="可下载的 DXF 相对/绝对 URL（用于浏览器下载）")
     svg_preview: str = Field(description="转换后的 SVG 预览字符串")
     session_id: str = Field(description="本次转换会话 ID")
+    debug_images: list[str] = Field(default_factory=list, description="算法调试图片 URL 列表")

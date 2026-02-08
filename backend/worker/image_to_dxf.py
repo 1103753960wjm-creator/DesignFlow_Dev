@@ -1,6 +1,7 @@
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import uuid4
 
 
 def _ensure_deps():
@@ -467,6 +468,7 @@ def image_to_dxf(*, image_path: str | Path, dxf_path: str | Path) -> Path:
 
     import ezdxf
     doc = ezdxf.new(dxfversion="R2010")
+    doc.header["$INSUNITS"] = 4
     msp = doc.modelspace()
     if not doc.layers.has_entry("WALL"):
         doc.layers.new(name="WALL")
@@ -520,6 +522,7 @@ def image_to_dxf(*, image_path: str | Path, dxf_path: str | Path) -> Path:
         keep.sort(key=cv2.contourArea, reverse=True)
         eps = float(_env_float("IMAGE_DXF_CONTOUR_EPS", 2.5))
         max_cnt = int(_env_int("IMAGE_DXF_CONTOUR_MAX", 10))
+        as_lines = _env_bool("IMAGE_DXF_CONTOUR_AS_LINES", True)
         for c in keep[:max_cnt]:
             approx = cv2.approxPolyDP(c, epsilon=eps, closed=True)
             pts = [(float(p[0][0]) + float(off_x), float(p[0][1]) + float(off_y)) for p in approx]
@@ -527,15 +530,260 @@ def image_to_dxf(*, image_path: str | Path, dxf_path: str | Path) -> Path:
                 continue
             mapped = [(x * mm_per_px, (h - y) * mm_per_px) for x, y in pts]
             msp.add_lwpolyline(mapped, format="xy", close=True, dxfattribs={"layer": "WALL"})
+            if as_lines:
+                n = int(len(mapped))
+                for i in range(n):
+                    x1, y1 = mapped[i]
+                    x2, y2 = mapped[(i + 1) % n]
+                    msp.add_line((x1, y1), (x2, y2), dxfattribs={"layer": "WALL"})
     else:
         raise ImageClarityError("未检测到可用线条")
     doc.saveas(str(out_path))
     return out_path
 
 
+def _ensure_layer(doc, name: str) -> None:
+    if not doc.layers.has_entry(name):
+        doc.layers.new(name=name)
+
+
+def _ensure_unit_square_block(doc, name: str) -> None:
+    if name in doc.blocks:
+        return
+    blk = doc.blocks.new(name=name)
+    blk.add_lwpolyline([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)], format="xy", close=True)
+
+
+def _add_solid_hatch(msp, points, *, layer: str) -> None:
+    hatch = msp.add_hatch(dxfattribs={"layer": layer})
+    if hasattr(hatch, "set_solid_fill"):
+        hatch.set_solid_fill(color=7)
+    else:
+        hatch.dxf.solid_fill = 1
+        hatch.dxf.pattern_name = "SOLID"
+    hatch.paths.add_polyline_path(points, is_closed=True)
+
+
+def _dxf_from_class_map(*, class_map, h: int, w: int, mm_per_px: float, out_path: Path) -> Path:
+    _ensure_deps()
+    import cv2
+    import numpy as np
+    import ezdxf
+
+    if class_map.shape[:2] != (h, w):
+        raise ImageToDxfError("Segmentation output size mismatch")
+
+    doc = ezdxf.new(dxfversion="R2010")
+    doc.header["$INSUNITS"] = 4
+    msp = doc.modelspace()
+
+    _ensure_layer(doc, "WALL")
+    _ensure_layer(doc, "WINDOW")
+    _ensure_layer(doc, "DOOR")
+    _ensure_unit_square_block(doc, "WINDOW")
+    _ensure_unit_square_block(doc, "DOOR")
+
+    wall_mask = (class_map == 1).astype(np.uint8) * 255
+    if wall_mask.max() == 0:
+        raise ImageClarityError("Segmentation detected no WALL pixels")
+
+    close_k = _odd_kernel(_env_int("IMAGE_DXF_WALL_CLOSE_KERNEL", 7))
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (close_k, close_k))
+    wall_mask = cv2.morphologyEx(wall_mask, cv2.MORPH_CLOSE, kernel)
+
+    contours, _ = cv2.findContours(wall_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        raise ImageClarityError("Segmentation detected no WALL contours")
+
+    min_area_px = float(_env_float("IMAGE_DXF_WALL_MIN_AREA_PX", 800.0))
+    kept = [c for c in contours if float(cv2.contourArea(c)) >= min_area_px]
+    if not kept:
+        raise ImageClarityError("Segmentation WALL contours too small")
+
+    for c in kept:
+        peri = float(cv2.arcLength(c, True))
+        eps = float(_env_float("IMAGE_DXF_WALL_EPS_FRAC", 0.01)) * peri
+        approx = cv2.approxPolyDP(c, epsilon=eps, closed=True)
+        pts_px = [(float(p[0][0]), float(p[0][1])) for p in approx]
+        if len(pts_px) < 3:
+            continue
+        pts_mm = [(x * mm_per_px, (float(h) - y) * mm_per_px) for x, y in pts_px]
+        msp.add_lwpolyline(pts_mm, format="xy", close=True, dxfattribs={"layer": "WALL"})
+        _add_solid_hatch(msp, pts_mm, layer="WALL")
+
+    def _add_openings_for_class(cls: int, *, layer: str, block_name: str) -> None:
+        mask = (class_map == cls).astype(np.uint8) * 255
+        if mask.max() == 0:
+            return
+        contours2, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        min_area2 = float(_env_float("IMAGE_DXF_OPENING_MIN_AREA_PX", 200.0))
+        for cc in contours2:
+            if float(cv2.contourArea(cc)) < min_area2:
+                continue
+            x, y, bw, bh = cv2.boundingRect(cc)
+            if bw <= 1 or bh <= 1:
+                continue
+            x_mm = float(x) * mm_per_px
+            y_mm = (float(h) - float(y + bh)) * mm_per_px
+            w_mm = float(bw) * mm_per_px
+            h_mm = float(bh) * mm_per_px
+            msp.add_blockref(
+                block_name,
+                (x_mm, y_mm),
+                dxfattribs={"layer": layer, "xscale": w_mm, "yscale": h_mm},
+            )
+
+    _add_openings_for_class(2, layer="WINDOW", block_name="WINDOW")
+    _add_openings_for_class(3, layer="DOOR", block_name="DOOR")
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    doc.saveas(str(out_path))
+    return out_path
+
+
+def image_to_dxf_ml(*, image_path: str | Path, dxf_path: str | Path) -> Path:
+    _ensure_deps()
+    import cv2
+
+    from worker.segmentation import LocalSegmentationModel
+
+    img_path = Path(image_path)
+    out_path = Path(dxf_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    color = cv2.imread(str(img_path), cv2.IMREAD_COLOR)
+    if color is None:
+        raise ImageToDxfError(f"无法读取图片: {img_path}")
+
+    h, w = int(color.shape[0]), int(color.shape[1])
+    mm_per_px = _env_float("IMAGE_DXF_MM_PER_PX", 10.0)
+
+    model = LocalSegmentationModel()
+    class_map = model.predict(img_path)
+    return _dxf_from_class_map(class_map=class_map, h=h, w=w, mm_per_px=mm_per_px, out_path=out_path)
+
+
+def _find_static_root(p: Path) -> Path | None:
+    cur = p.resolve()
+    for parent in [cur] + list(cur.parents):
+        if parent.name.lower() == "static":
+            return parent
+    return None
+
+
+def _extract_session_id_from_dxf_path(p: Path) -> str | None:
+    parts = [x.lower() for x in p.parts]
+    for i, name in enumerate(parts):
+        if name == "sessions" and i + 1 < len(parts):
+            return p.parts[i + 1]
+    return None
+
+
+def _save_debug_images(*, image_path: Path, output_dxf_path: Path, enable_ai: bool) -> None:
+    _ensure_deps()
+    import cv2
+    import numpy as np
+
+    color = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
+    if color is None:
+        return
+    gray = cv2.cvtColor(color, cv2.COLOR_BGR2GRAY)
+
+    session_id = _extract_session_id_from_dxf_path(output_dxf_path) or uuid4().hex
+    static_root = _find_static_root(output_dxf_path) or (Path(__file__).resolve().parents[1] / "static")
+    debug_dir = static_root / "debug" / session_id
+    debug_dir.mkdir(parents=True, exist_ok=True)
+
+    cv2.imwrite(str(debug_dir / "debug_step1_gray.png"), gray)
+
+    params = DetectParams(
+        blur_kernel=_env_int("IMAGE_DXF_BLUR_KERNEL", 3),
+        morph_close=_env_bool("IMAGE_DXF_MORPH_CLOSE", True),
+        morph_kernel=_env_int("IMAGE_DXF_MORPH_KERNEL", 3),
+        canny_low=_env_int("IMAGE_DXF_CANNY_LOW", 25),
+        canny_high=_env_int("IMAGE_DXF_CANNY_HIGH", 75),
+        hough_threshold=_env_int("IMAGE_DXF_HOUGH_THRESHOLD", 25),
+        min_line=_env_int("IMAGE_DXF_MIN_LINE", 10),
+        max_gap=_env_int("IMAGE_DXF_MAX_GAP", 25),
+    )
+    try:
+        _, edges, _ = _run_canny_hough(gray, params=params)
+    except Exception:
+        edges = np.zeros_like(gray)
+    cv2.imwrite(str(debug_dir / "debug_step3_opencv_edges.png"), edges)
+
+    ai_mask_path = debug_dir / "debug_step2_ai_mask.png"
+    cv2.imwrite(str(ai_mask_path), np.zeros_like(gray))
+
+
+def _ai_wall_mask_is_usable(wall_mask) -> bool:
+    import cv2
+    import numpy as np
+
+    if wall_mask is None or wall_mask.size == 0:
+        return False
+    if int(np.max(wall_mask)) == 0:
+        return False
+    h, w = int(wall_mask.shape[0]), int(wall_mask.shape[1])
+    nz = int(np.count_nonzero(wall_mask))
+    ratio = float(nz) / float(max(1, h * w))
+    min_ratio = float(_env_float("IMAGE_DXF_AI_MIN_RATIO", 0.002))
+    max_ratio = float(_env_float("IMAGE_DXF_AI_MAX_RATIO", 0.7))
+    if ratio < min_ratio or ratio > max_ratio:
+        return False
+    contours, _ = cv2.findContours(wall_mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return False
+    max_contours = int(_env_int("IMAGE_DXF_AI_MAX_CONTOURS", 250))
+    min_large_area = float(_env_float("IMAGE_DXF_AI_MIN_LARGE_AREA_PX", 600.0))
+    large = [c for c in contours if float(cv2.contourArea(c)) >= min_large_area]
+    if not large:
+        return False
+    if len(contours) > max_contours and ratio < 0.2:
+        return False
+    return True
+
+
 def convert_image_to_dxf(image_path: str | Path, output_dxf_path: str | Path) -> Path:
     try:
-        out = image_to_dxf(image_path=image_path, dxf_path=output_dxf_path)
+        use_ml = _env_bool("IMAGE_DXF_USE_LOCAL_SEG", True)
+        img_path = Path(image_path)
+        out_path = Path(output_dxf_path)
+        _save_debug_images(image_path=img_path, output_dxf_path=out_path, enable_ai=use_ml)
+
+        if use_ml:
+            try:
+                import cv2
+                import numpy as np
+
+                color = cv2.imread(str(img_path), cv2.IMREAD_COLOR)
+                if color is None:
+                    raise ImageToDxfError(f"无法读取图片: {img_path}")
+                h, w = int(color.shape[0]), int(color.shape[1])
+                mm_per_px = _env_float("IMAGE_DXF_MM_PER_PX", 10.0)
+
+                from worker.segmentation import LocalSegmentationModel
+
+                model = LocalSegmentationModel()
+                class_map = model.predict(img_path)
+                wall_mask = (class_map == 1).astype(np.uint8) * 255
+                try:
+                    session_id = _extract_session_id_from_dxf_path(out_path) or uuid4().hex
+                    static_root = _find_static_root(out_path) or (Path(__file__).resolve().parents[1] / "static")
+                    debug_dir = static_root / "debug" / session_id
+                    debug_dir.mkdir(parents=True, exist_ok=True)
+                    import cv2
+
+                    cv2.imwrite(str(debug_dir / "debug_step2_ai_mask.png"), wall_mask)
+                except Exception:
+                    pass
+                if not _ai_wall_mask_is_usable(wall_mask):
+                    raise ImageClarityError("AI mask unusable, falling back to OpenCV")
+                out = _dxf_from_class_map(class_map=class_map, h=h, w=w, mm_per_px=mm_per_px, out_path=out_path)
+            except (ImportError, ModuleNotFoundError, RuntimeError, ImageClarityError):
+                out = image_to_dxf(image_path=img_path, dxf_path=out_path)
+        else:
+            out = image_to_dxf(image_path=img_path, dxf_path=out_path)
     except ImageClarityError:
         raise
     except ImageToDxfError:
